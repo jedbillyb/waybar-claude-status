@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh idle" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh working" } ] }
+    ],
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh waiting" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh idle" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh end" } ] }
+    ]
+  }
+}
