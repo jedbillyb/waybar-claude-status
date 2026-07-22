@@ -1,6 +1,6 @@
 # waybar-claude-status
 
-> See what every Claude Code session is doing — right from your bar.
+> See what every Claude Code session is doing - right from your bar.
 
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
 [![Shell](https://img.shields.io/badge/Bash-4+-4EAA25?style=flat-square&logo=gnu-bash&logoColor=white)](https://www.gnu.org/software/bash/)
@@ -8,15 +8,15 @@
 
 A [waybar](https://github.com/Alexays/Waybar) module that shows the live status
 of your [Claude Code](https://claude.com/claude-code) sessions, driven by Claude
-Code hooks — no polling, updates the instant state changes. Built and tested on
+Code hooks - no polling, updates the instant state changes. Built and tested on
 Void Linux + sway.
 
 The bar shows one of:
 
-- **claude working** — Claude is actively running (prompt submitted / a tool is executing)
-- **claude waiting** — Claude needs your attention (a permission prompt / notification)
-- **claude idle** — session is open and waiting for your next prompt
-- *(nothing)* — no active sessions
+- **claude working** - Claude is actively running (prompt submitted / a tool is executing)
+- **claude waiting** - Claude needs your attention (a permission prompt / notification)
+- **claude idle** - session is open and waiting for your next prompt
+- *(nothing)* - no active sessions
 
 If more than one session is active the label gains a count, e.g.
 `claude working (2)`, and the tooltip lists each session by its working
@@ -26,14 +26,14 @@ directory. Priority is **waiting > working > idle**.
 
 ## Features
 
-- **Realtime** — hooks push state on every lifecycle event and signal waybar to
+- **Realtime** - hooks push state on every lifecycle event and signal waybar to
   refresh instantly (`SIGRTMIN+10`); no interval polling of Claude
-- **Multi-session aware** — aggregates every open session, with a count and a
+- **Multi-session aware** - aggregates every open session, with a count and a
   per-session tooltip
-- **Self-healing** — crashed sessions that never fired an end hook are pruned
+- **Self-healing** - crashed sessions that never fired an end hook are pruned
   automatically after `CLAUDE_WAYBAR_STALE_SECS`
-- **Themeable** — a CSS class per state (`working` / `waiting` / `idle` / `none`)
-- **Zero dependencies** — plain Bash + `jq`
+- **Themeable** - a CSS class per state (`working` / `waiting` / `idle` / `none`)
+- **Zero dependencies** - plain Bash + `jq`
 
 ---
 
@@ -43,7 +43,7 @@ Claude Code fires [hooks](https://docs.claude.com/en/docs/claude-code/hooks) on
 lifecycle events. `claude-hook.sh` catches them, writes a small state file per
 session under `~/.cache/claude-waybar/sessions/`, and sends waybar a realtime
 signal (`SIGRTMIN+10`) so the bar updates instantly. `claude-status.sh` is the
-waybar `exec` module — it aggregates the state files and prints JSON.
+waybar `exec` module - it aggregates the state files and prints JSON.
 
 The hooks map lifecycle events to states:
 
@@ -76,11 +76,11 @@ module's `interval` is only a safety net (it also prunes crashed sessions).
 ./install.sh
 ```
 
-Then follow the three snippets it prints — merge them into:
+Then follow the three snippets it prints - merge them into:
 
-- `~/.config/waybar/config` — the `custom/claude` module (see `install.sh` output)
-- `~/.config/waybar/style.css` — colours, from `style.css.example`
-- `~/.claude/settings.json` — the hooks, from `claude-settings.json.example`
+- `~/.config/waybar/config` - the `custom/claude` module (see `install.sh` output)
+- `~/.config/waybar/style.css` - colours, from `style.css.example`
+- `~/.claude/settings.json` - the hooks, from `claude-settings.json.example`
 
 Reload waybar (`pkill -SIGUSR2 waybar`) and start a Claude Code session.
 
@@ -104,4 +104,4 @@ it in both the module's `signal` and `CLAUDE_WAYBAR_SIGNAL`.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT - see [LICENSE](./LICENSE).
