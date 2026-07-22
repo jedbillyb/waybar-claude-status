@@ -6,6 +6,9 @@
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh working" } ] }
     ],
+    "PreToolUse": [
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh working" } ] }
+    ],
     "Notification": [
       { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh waiting" } ] }
     ],
