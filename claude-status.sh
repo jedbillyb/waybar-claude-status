@@ -44,16 +44,36 @@ if [ "$total" -eq 0 ]; then
     exit 0
 fi
 
+# Colour follows the highest-priority state present: waiting > working > idle.
 if [ "$waiting" -gt 0 ]; then
-    class="waiting"; word="waiting"
+    class="waiting"
 elif [ "$working" -gt 0 ]; then
-    class="working"; word="working"
+    class="working"
 else
-    class="idle"; word="idle"
+    class="idle"
 fi
 
-text="claude $word"
-[ "$total" -gt 1 ] && text="$text ($total)"
+# Build the label. When every session is in the same state, keep it simple
+# ("claude working", or "claude working (3)" for several). When they differ,
+# show a per-state breakdown so "1 working, 1 idle" doesn't read as "2 working".
+states=0
+[ "$waiting" -gt 0 ] && states=$((states+1))
+[ "$working" -gt 0 ] && states=$((states+1))
+[ "$idle"    -gt 0 ] && states=$((states+1))
+
+if [ "$states" -le 1 ]; then
+    [ "$waiting" -gt 0 ] && word="waiting"
+    [ "$working" -gt 0 ] && word="working"
+    [ "$idle"    -gt 0 ] && word="idle"
+    text="claude $word"
+    [ "$total" -gt 1 ] && text="$text ($total)"
+else
+    parts=""
+    [ "$waiting" -gt 0 ] && parts="$parts  $waiting waiting"
+    [ "$working" -gt 0 ] && parts="$parts  $working working"
+    [ "$idle"    -gt 0 ] && parts="$parts  $idle idle"
+    text="claude${parts}"
+fi
 
 # Trim trailing newline from tooltip.
 tooltip="${tooltip%\\n}"

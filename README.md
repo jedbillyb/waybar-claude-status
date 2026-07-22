@@ -18,9 +18,12 @@ The bar shows one of:
 - **claude idle** - session is open and waiting for your next prompt
 - *(nothing)* - no active sessions
 
-If more than one session is active the label gains a count, e.g.
-`claude working (2)`, and the tooltip lists each session by its working
-directory. Priority is **waiting > working > idle**.
+With several sessions in the **same** state the label gains a count, e.g.
+`claude working (2)`. When they **differ** it shows a per-state breakdown -
+`claude  1 waiting  1 working` - so a working+idle pair never reads as two
+working. The colour follows the highest-priority state present
+(**waiting > working > idle**), and the tooltip lists each session by its
+working directory.
 
 ---
 
