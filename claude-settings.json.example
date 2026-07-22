@@ -9,6 +9,9 @@
     "PreToolUse": [
       { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh working" } ] }
     ],
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh working" } ] }
+    ],
     "Notification": [
       { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh waiting" } ] }
     ],

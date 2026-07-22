@@ -54,7 +54,8 @@ The hooks map lifecycle events to states:
 |--------------------|-----------|----------------------------------------------------|
 | `SessionStart`     | `idle`    | a session opened                                   |
 | `UserPromptSubmit` | `working` | you submitted a prompt                             |
-| `PreToolUse`       | `working` | a tool is running (also clears a stale `waiting`)  |
+| `PreToolUse`       | `working` | a tool is about to run (also clears a stale `waiting`) |
+| `PostToolUse`      | `working` | a tool finished (keeps `working` fresh during long turns) |
 | `Notification`     | `waiting` | Claude needs input (e.g. a permission prompt)      |
 | `Stop`             | `idle`    | the turn finished                                  |
 | `SessionEnd`       | `end`     | the session closed (state file removed)            |
@@ -70,6 +71,16 @@ module's `interval` is only a safety net (it also prunes crashed sessions).
 > **Note:** Claude Code loads hooks at session start, so the mapping above only
 > applies to sessions started *after* you add the hooks. Restart any
 > already-running session to pick them up.
+
+### Interrupts
+
+Claude Code fires **no hook when you interrupt a turn** (Esc), so a `working`
+session would otherwise stay `working` forever. As a fallback, a `working`
+session that hasn't had any hook activity for `CLAUDE_WAYBAR_WORK_TIMEOUT`
+seconds (default `90`) is shown as `idle`. The `PreToolUse` / `PostToolUse`
+hooks refresh the timestamp during real work so this only triggers once the
+turn actually stops. Lower it for snappier recovery after interrupts, or raise
+it if you run long single tools with no intermediate hooks.
 
 ---
 
@@ -99,6 +110,8 @@ your session):
 | `CLAUDE_WAYBAR_STATE_DIR`    | `~/.cache/claude-waybar/sessions`    | where per-session state lives |
 | `CLAUDE_WAYBAR_SIGNAL`       | `10`                                 | waybar `SIGRTMIN+N` signal number (must match the `signal` in your module) |
 | `CLAUDE_WAYBAR_STALE_SECS`   | `86400`                              | drop sessions older than this many seconds |
+| `CLAUDE_WAYBAR_WORK_TIMEOUT` | `90`                                 | a `working` session idle this long (no hook activity) is shown as `idle` (interrupt fallback) |
+| `CLAUDE_WAYBAR_COLOR_WAITING`/`_WORKING`/`_IDLE` | `#e0af68`/`#9ece6a`/`#7f849c` | per-state colours for the mixed-session breakdown |
 
 If you already use `SIGRTMIN+10` for another module, pick a free number and set
 it in both the module's `signal` and `CLAUDE_WAYBAR_SIGNAL`.

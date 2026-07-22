@@ -10,6 +10,10 @@ set -euo pipefail
 
 STATE_DIR="${CLAUDE_WAYBAR_STATE_DIR:-$HOME/.cache/claude-waybar/sessions}"
 STALE_SECS="${CLAUDE_WAYBAR_STALE_SECS:-86400}"   # drop sessions older than 24h
+# A 'working' session with no hook activity for this long is shown as idle.
+# Claude Code fires no hook on user interrupt (Esc), so 'working' can otherwise
+# get stuck; PreToolUse/PostToolUse refresh the timestamp during real work.
+WORK_TIMEOUT="${CLAUDE_WAYBAR_WORK_TIMEOUT:-90}"
 
 mkdir -p "$STATE_DIR"
 
@@ -25,6 +29,10 @@ for f in "$STATE_DIR"/*; do
     if [ $(( now - ts )) -gt "$STALE_SECS" ]; then
         rm -f "$f"
         continue
+    fi
+    # No interrupt hook exists, so demote a stale 'working' session to idle.
+    if [ "$status" = "working" ] && [ $(( now - ts )) -gt "$WORK_TIMEOUT" ]; then
+        status="idle"
     fi
     case "$status" in
         waiting) waiting=$((waiting+1)) ;;
