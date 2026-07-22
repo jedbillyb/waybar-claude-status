@@ -44,6 +44,12 @@ if [ "$total" -eq 0 ]; then
     exit 0
 fi
 
+# Per-state colours (override to match your style.css). Used for the Pango
+# markup in the mixed-state label so each count is coloured by its own state.
+COLOR_WAITING="${CLAUDE_WAYBAR_COLOR_WAITING:-#e0af68}"
+COLOR_WORKING="${CLAUDE_WAYBAR_COLOR_WORKING:-#9ece6a}"
+COLOR_IDLE="${CLAUDE_WAYBAR_COLOR_IDLE:-#7f849c}"
+
 # Colour follows the highest-priority state present: waiting > working > idle.
 if [ "$waiting" -gt 0 ]; then
     class="waiting"
@@ -54,8 +60,10 @@ else
 fi
 
 # Build the label. When every session is in the same state, keep it simple
-# ("claude working", or "claude working (3)" for several). When they differ,
-# show a per-state breakdown so "1 working, 1 idle" doesn't read as "2 working".
+# ("claude working", or "claude working (3)" for several) and let the CSS class
+# colour it. When they differ, show a per-state breakdown with each count
+# coloured by its own state via Pango markup, so "1 working, 1 idle" doesn't
+# read (or look) like "2 working".
 states=0
 [ "$waiting" -gt 0 ] && states=$((states+1))
 [ "$working" -gt 0 ] && states=$((states+1))
@@ -68,10 +76,11 @@ if [ "$states" -le 1 ]; then
     text="claude $word"
     [ "$total" -gt 1 ] && text="$text ($total)"
 else
+    class="mixed"   # neutral base colour; the spans below colour each segment
     parts=""
-    [ "$waiting" -gt 0 ] && parts="$parts  $waiting waiting"
-    [ "$working" -gt 0 ] && parts="$parts  $working working"
-    [ "$idle"    -gt 0 ] && parts="$parts  $idle idle"
+    [ "$waiting" -gt 0 ] && parts="$parts  <span foreground='$COLOR_WAITING'>$waiting waiting</span>"
+    [ "$working" -gt 0 ] && parts="$parts  <span foreground='$COLOR_WORKING'>$working working</span>"
+    [ "$idle"    -gt 0 ] && parts="$parts  <span foreground='$COLOR_IDLE'>$idle idle</span>"
     text="claude${parts}"
 fi
 
