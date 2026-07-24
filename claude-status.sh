@@ -24,8 +24,16 @@ tooltip=""
 shopt -s nullglob
 for f in "$STATE_DIR"/*; do
     [ -f "$f" ] || continue
-    IFS=$'\t' read -r status ts cwd < "$f" || continue
+    IFS=$'\t' read -r status ts cwd pid < "$f" || continue
     [ -z "${ts:-}" ] && ts=0
+    # Prune orphans: if the owning claude PID is recorded but no longer alive,
+    # the session died without firing its 'end' hook (crash/kill/close). This
+    # is the primary cleanup; the timeouts below are backstops for older files
+    # written before PIDs were tracked, or PID reuse edge cases.
+    if [ -n "${pid:-}" ] && ! kill -0 "$pid" 2>/dev/null; then
+        rm -f "$f"
+        continue
+    fi
     if [ $(( now - ts )) -gt "$STALE_SECS" ]; then
         rm -f "$f"
         continue

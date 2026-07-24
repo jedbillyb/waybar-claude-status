@@ -29,10 +29,25 @@ fi
 
 state_file="$STATE_DIR/$session_id"
 
+# Find the owning `claude` process by walking up the ancestry. Hooks are run
+# via a short-lived shell (e.g. `sh -c`), so $PPID itself is gone by the next
+# poll; we want the long-lived claude PID. The status module uses it to prune
+# orphaned files when a session dies without firing the SessionEnd 'end' hook
+# (crash, killed terminal, Esc-interrupt). Empty if not found (older layouts).
+find_claude_pid() {
+    local p="$PPID"
+    while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do
+        if [ "$(cat "/proc/$p/comm" 2>/dev/null)" = "claude" ]; then
+            printf '%s' "$p"; return
+        fi
+        p="$(awk '/^PPid:/{print $2}' "/proc/$p/status" 2>/dev/null)"
+    done
+}
+
 if [ "$STATUS" = "end" ]; then
     rm -f "$state_file"
 else
-    printf '%s\t%s\t%s\n' "$STATUS" "$(date +%s)" "$cwd" > "$state_file"
+    printf '%s\t%s\t%s\t%s\n' "$STATUS" "$(date +%s)" "$cwd" "$(find_claude_pid)" > "$state_file"
 fi
 
 # Nudge waybar to re-run the module now (SIGRTMIN+SIGNAL).
