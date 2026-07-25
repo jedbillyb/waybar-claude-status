@@ -82,6 +82,23 @@ hooks refresh the timestamp during real work so this only triggers once the
 turn actually stops. Lower it for snappier recovery after interrupts, or raise
 it if you run long single tools with no intermediate hooks.
 
+### Background jobs and agent sessions
+
+Background jobs and agent sessions are *separate* Claude Code sessions with
+their own `session_id`, so each one gets its own state file. One terminal
+running a couple of agents therefore reports several sessions - that is real,
+not a bug, and the tooltip marks those entries `(agent)`.
+
+They are counted by default, since a background job stuck on `waiting` is easy
+to miss otherwise. Set `CLAUDE_WAYBAR_AGENTS=hide` to report only the session
+you are typing in; hidden sessions are still pruned, so nothing accumulates.
+
+The owning PID is resolved by walking up from the hook to the nearest process
+named `claude` **or** `claude.exe` - agent sessions run as the latter, nested
+under the interactive `claude`. Matching only `claude` would attribute every
+agent to the top-level session, which outlives them all, so their state files
+would never be pruned and phantom sessions would pile up in the bar.
+
 ---
 
 ## Install
@@ -111,6 +128,7 @@ your session):
 | `CLAUDE_WAYBAR_SIGNAL`       | `10`                                 | waybar `SIGRTMIN+N` signal number (must match the `signal` in your module) |
 | `CLAUDE_WAYBAR_STALE_SECS`   | `86400`                              | drop sessions older than this many seconds |
 | `CLAUDE_WAYBAR_WORK_TIMEOUT` | `90`                                 | a `working` session idle this long (no hook activity) is shown as `idle` (interrupt fallback) |
+| `CLAUDE_WAYBAR_AGENTS`       | `count`                              | `count` includes background/agent sessions; `hide` reports only the interactive session |
 | `CLAUDE_WAYBAR_COLOR_WAITING`/`_WORKING`/`_IDLE` | `#e0af68`/`#9ece6a`/`#7f849c` | per-state colours for the mixed-session breakdown |
 
 If you already use `SIGRTMIN+10` for another module, pick a free number and set

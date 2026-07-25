@@ -14,6 +14,11 @@ STALE_SECS="${CLAUDE_WAYBAR_STALE_SECS:-86400}"   # drop sessions older than 24h
 # Claude Code fires no hook on user interrupt (Esc), so 'working' can otherwise
 # get stuck; PreToolUse/PostToolUse refresh the timestamp during real work.
 WORK_TIMEOUT="${CLAUDE_WAYBAR_WORK_TIMEOUT:-90}"
+# Background jobs and Task/agent sessions are separate sessions with their own
+# state files, so a single terminal running agents legitimately reports several.
+# 'count' includes them (a waiting background job is worth noticing); 'hide'
+# keeps the module reporting only the session you are typing in.
+AGENTS="${CLAUDE_WAYBAR_AGENTS:-count}"
 
 mkdir -p "$STATE_DIR"
 
@@ -24,7 +29,10 @@ tooltip=""
 shopt -s nullglob
 for f in "$STATE_DIR"/*; do
     [ -f "$f" ] || continue
-    IFS=$'\t' read -r status ts cwd pid < "$f" || continue
+    # 'kind' (main|agent) is absent in files written by older hook versions;
+    # treat those as main sessions.
+    IFS=$'\t' read -r status ts cwd pid kind < "$f" || continue
+    [ -z "${kind:-}" ] && kind="main"
     [ -z "${ts:-}" ] && ts=0
     # Prune orphans: if the owning claude PID is recorded but no longer alive,
     # the session died without firing its 'end' hook (crash/kill/close). This
@@ -42,6 +50,11 @@ for f in "$STATE_DIR"/*; do
     if [ "$status" = "working" ] && [ $(( now - ts )) -gt "$WORK_TIMEOUT" ]; then
         status="idle"
     fi
+    # Skip after pruning, never before, so hidden agent sessions still get
+    # their stale files cleaned up.
+    if [ "$AGENTS" = "hide" ] && [ "$kind" = "agent" ]; then
+        continue
+    fi
     case "$status" in
         waiting) waiting=$((waiting+1)) ;;
         working) working=$((working+1)) ;;
@@ -49,6 +62,9 @@ for f in "$STATE_DIR"/*; do
     esac
     label="${cwd##*/}"
     [ -z "$label" ] && label="?"
+    # Mark background/agent sessions so a count above 1 is self-explanatory
+    # when only one terminal is open.
+    [ "$kind" = "agent" ] && label="$label (agent)"
     tooltip="${tooltip}${status}\t${label}\n"
 done
 
