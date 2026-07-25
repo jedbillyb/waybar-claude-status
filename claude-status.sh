@@ -19,12 +19,22 @@ WORK_TIMEOUT="${CLAUDE_WAYBAR_WORK_TIMEOUT:-90}"
 # 'count' includes them (a waiting background job is worth noticing); 'hide'
 # keeps the module reporting only the session you are typing in.
 AGENTS="${CLAUDE_WAYBAR_AGENTS:-count}"
+# The interactive session is the one you are looking at, so an idle or waiting
+# terminal does not need a badge — only count it while it is actually working.
+# 'always' restores counting it in every state (useful if you keep sessions on
+# other workspaces and want their permission prompts on the bar).
+MAIN="${CLAUDE_WAYBAR_MAIN:-working}"
 
 mkdir -p "$STATE_DIR"
 
 now="$(date +%s)"
 waiting=0 working=0 idle=0
+# Agent/background sessions are counted separately from the interactive ones, so
+# the label can read "claude idle +3" instead of folding your own terminal into
+# the agent count and claiming 4 sessions when you started 3 agents.
+a_waiting=0 a_working=0 a_idle=0
 tooltip=""
+tooltip_agents=""
 
 shopt -s nullglob
 for f in "$STATE_DIR"/*; do
@@ -55,18 +65,42 @@ for f in "$STATE_DIR"/*; do
     if [ "$AGENTS" = "hide" ] && [ "$kind" = "agent" ]; then
         continue
     fi
-    case "$status" in
-        waiting) waiting=$((waiting+1)) ;;
-        working) working=$((working+1)) ;;
-        *)       idle=$((idle+1)) ;;
-    esac
+    if [ "$kind" = "agent" ]; then
+        case "$status" in
+            waiting) a_waiting=$((a_waiting+1)) ;;
+            working) a_working=$((a_working+1)) ;;
+            *)       a_idle=$((a_idle+1)) ;;
+        esac
+    elif [ "$MAIN" = "always" ] || [ "$status" = "working" ]; then
+        case "$status" in
+            waiting) waiting=$((waiting+1)) ;;
+            working) working=$((working+1)) ;;
+            *)       idle=$((idle+1)) ;;
+        esac
+    fi
     label="${cwd##*/}"
     [ -z "$label" ] && label="?"
     # Mark background/agent sessions so a count above 1 is self-explanatory
-    # when only one terminal is open.
-    [ "$kind" = "agent" ] && label="$label (agent)"
-    tooltip="${tooltip}${status}\t${label}\n"
+    # when only one terminal is open, and list them after the interactive ones.
+    if [ "$kind" = "agent" ]; then
+        tooltip_agents="${tooltip_agents}${status}\t${label} (agent)\n"
+    else
+        tooltip="${tooltip}${status}\t${label}\n"
+    fi
 done
+
+tooltip="${tooltip}${tooltip_agents}"
+
+agents=$((a_waiting+a_working+a_idle))
+
+# When no interactive session is registered (it may not have fired a hook yet)
+# the agents stand in for it, so the label is built from their counts instead of
+# reporting nothing. Otherwise agents only ever contribute the "+N" suffix.
+if [ $((waiting+working+idle)) -eq 0 ] && [ "$agents" -gt 0 ]; then
+    waiting=$a_waiting working=$a_working idle=$a_idle
+    a_waiting=0 a_working=0 a_idle=0
+    agents=0
+fi
 
 total=$((waiting+working+idle))
 
@@ -83,9 +117,11 @@ COLOR_WORKING="${CLAUDE_WAYBAR_COLOR_WORKING:-#9ece6a}"
 COLOR_IDLE="${CLAUDE_WAYBAR_COLOR_IDLE:-#7f849c}"
 
 # Colour follows the highest-priority state present: waiting > working > idle.
-if [ "$waiting" -gt 0 ]; then
+# Agents count towards it: an agent stuck on a permission prompt is the whole
+# reason to glance at the bar.
+if [ $((waiting+a_waiting)) -gt 0 ]; then
     class="waiting"
-elif [ "$working" -gt 0 ]; then
+elif [ $((working+a_working)) -gt 0 ]; then
     class="working"
 else
     class="idle"
@@ -114,6 +150,20 @@ else
     [ "$working" -gt 0 ] && parts="$parts  <span foreground='$COLOR_WORKING'>$working working</span>"
     [ "$idle"    -gt 0 ] && parts="$parts  <span foreground='$COLOR_IDLE'>$idle idle</span>"
     text="claude${parts}"
+fi
+
+# Agents ride along as a "+N" suffix, coloured by their own highest-priority
+# state, so the number always matches the number of agents you started and the
+# main label keeps meaning "the session I am typing in".
+if [ "$agents" -gt 0 ]; then
+    if [ "$a_waiting" -gt 0 ]; then
+        a_color="$COLOR_WAITING"
+    elif [ "$a_working" -gt 0 ]; then
+        a_color="$COLOR_WORKING"
+    else
+        a_color="$COLOR_IDLE"
+    fi
+    text="$text <span foreground='$a_color'>+$agents</span>"
 fi
 
 # Trim trailing newline from tooltip.

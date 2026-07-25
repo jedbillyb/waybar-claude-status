@@ -93,6 +93,26 @@ They are counted by default, since a background job stuck on `waiting` is easy
 to miss otherwise. Set `CLAUDE_WAYBAR_AGENTS=hide` to report only the session
 you are typing in; hidden sessions are still pruned, so nothing accumulates.
 
+The interactive session is counted **only while it is actually working** - you
+are already looking at that terminal, so an idle or waiting one does not need a
+badge, and folding it in would report 4 sessions when you started 3 agents. It
+still appears in the tooltip. Set `CLAUDE_WAYBAR_MAIN=always` to count it in
+every state, which is what you want if you keep sessions on other workspaces
+and want their permission prompts to reach the bar.
+
+So the label reads:
+
+| Situation                        | Label                |
+|----------------------------------|----------------------|
+| terminal working, no agents      | `claude working`     |
+| terminal working, 3 agents       | `claude working +3`  |
+| terminal idle, 3 agents working  | `claude working (3)` |
+| terminal idle, no agents         | *(module collapses)* |
+
+The `+N` suffix is coloured by the agents' own highest-priority state, so a
+background job hitting a permission prompt turns it amber even while your own
+session is happily working.
+
 The owning PID is resolved by walking up from the hook to the nearest process
 named `claude` **or** `claude.exe` - agent sessions run as the latter, nested
 under the interactive `claude`. Matching only `claude` would attribute every
@@ -128,7 +148,8 @@ your session):
 | `CLAUDE_WAYBAR_SIGNAL`       | `10`                                 | waybar `SIGRTMIN+N` signal number (must match the `signal` in your module) |
 | `CLAUDE_WAYBAR_STALE_SECS`   | `86400`                              | drop sessions older than this many seconds |
 | `CLAUDE_WAYBAR_WORK_TIMEOUT` | `90`                                 | a `working` session idle this long (no hook activity) is shown as `idle` (interrupt fallback) |
-| `CLAUDE_WAYBAR_AGENTS`       | `count`                              | `count` includes background/agent sessions; `hide` reports only the interactive session |
+| `CLAUDE_WAYBAR_AGENTS`       | `count`                              | `count` includes background/agent sessions as a `+N` suffix; `hide` reports only the interactive session |
+| `CLAUDE_WAYBAR_MAIN`         | `working`                            | `working` counts the interactive session only while it is working; `always` counts it in every state |
 | `CLAUDE_WAYBAR_COLOR_WAITING`/`_WORKING`/`_IDLE` | `#e0af68`/`#9ece6a`/`#7f849c` | per-state colours for the mixed-session breakdown |
 
 If you already use `SIGRTMIN+10` for another module, pick a free number and set
