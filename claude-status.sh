@@ -16,9 +16,17 @@ STALE_SECS="${CLAUDE_WAYBAR_STALE_SECS:-86400}"   # drop sessions older than 24h
 WORK_TIMEOUT="${CLAUDE_WAYBAR_WORK_TIMEOUT:-90}"
 # Background jobs and Task/agent sessions are separate sessions with their own
 # state files, so a single terminal running agents legitimately reports several.
-# 'count' includes them (a waiting background job is worth noticing); 'hide'
-# keeps the module reporting only the session you are typing in.
-AGENTS="${CLAUDE_WAYBAR_AGENTS:-count}"
+#
+# 'active' (default) counts only agents that are working or waiting. Claude Code
+# keeps pre-warmed `claude bg-spare` workers around for background jobs; each
+# fires SessionStart and then sits at 'idle' until it is claimed, so counting
+# idle agents put phantom sessions on the bar that were never started. A
+# finished agent
+# whose process lingers looks the same. Either way an idle agent is nothing to
+# glance at, so it stays out of the badge and remains listed in the tooltip.
+# 'count' includes idle agents too; 'hide' keeps the module reporting only the
+# session you are typing in.
+AGENTS="${CLAUDE_WAYBAR_AGENTS:-active}"
 # The interactive session is the one you are looking at, so an idle or waiting
 # terminal does not need a badge — only count it while it is actually working.
 # 'always' restores counting it in every state (useful if you keep sessions on
@@ -69,7 +77,8 @@ for f in "$STATE_DIR"/*; do
         case "$status" in
             waiting) a_waiting=$((a_waiting+1)) ;;
             working) a_working=$((a_working+1)) ;;
-            *)       a_idle=$((a_idle+1)) ;;
+            # Idle agents only reach the badge under AGENTS=count; see above.
+            *)       if [ "$AGENTS" = "count" ]; then a_idle=$((a_idle+1)); fi ;;
         esac
     elif [ "$MAIN" = "always" ] || [ "$status" = "working" ]; then
         case "$status" in

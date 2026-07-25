@@ -89,9 +89,18 @@ their own `session_id`, so each one gets its own state file. One terminal
 running a couple of agents therefore reports several sessions - that is real,
 not a bug, and the tooltip marks those entries `(agent)`.
 
-They are counted by default, since a background job stuck on `waiting` is easy
-to miss otherwise. Set `CLAUDE_WAYBAR_AGENTS=hide` to report only the session
-you are typing in; hidden sessions are still pruned, so nothing accumulates.
+Working and waiting agents are counted by default, since a background job stuck
+on `waiting` is easy to miss otherwise. **Idle agents are not.** Claude Code
+keeps pre-warmed `claude bg-spare` workers around to start background jobs
+quickly; each one fires `SessionStart` and then sits at `idle` until it is
+claimed, so counting idle agents put sessions on the bar that were never
+started - the classic symptom being a stray `1 idle` next to your real agents.
+A finished agent whose process lingers looks the same. They stay in the
+tooltip, just out of the badge.
+
+Set `CLAUDE_WAYBAR_AGENTS=count` for the old behaviour (idle agents counted
+too), or `CLAUDE_WAYBAR_AGENTS=hide` to report only the session you are typing
+in; hidden sessions are still pruned, so nothing accumulates.
 
 The interactive session is counted **only while it is actually working** - you
 are already looking at that terminal, so an idle or waiting one does not need a
@@ -107,7 +116,9 @@ So the label reads:
 | terminal working, no agents      | `claude working`     |
 | terminal working, 3 agents       | `claude working +3`  |
 | terminal idle, 3 agents working  | `claude working (3)` |
+| terminal working, 2 agents working + 1 idle | `claude working +2` |
 | terminal idle, no agents         | *(module collapses)* |
+| terminal idle, only idle agents  | *(module collapses)* |
 
 The `+N` suffix is coloured by the agents' own highest-priority state, so a
 background job hitting a permission prompt turns it amber even while your own
@@ -148,7 +159,7 @@ your session):
 | `CLAUDE_WAYBAR_SIGNAL`       | `10`                                 | waybar `SIGRTMIN+N` signal number (must match the `signal` in your module) |
 | `CLAUDE_WAYBAR_STALE_SECS`   | `86400`                              | drop sessions older than this many seconds |
 | `CLAUDE_WAYBAR_WORK_TIMEOUT` | `90`                                 | a `working` session idle this long (no hook activity) is shown as `idle` (interrupt fallback) |
-| `CLAUDE_WAYBAR_AGENTS`       | `count`                              | `count` includes background/agent sessions as a `+N` suffix; `hide` reports only the interactive session |
+| `CLAUDE_WAYBAR_AGENTS`       | `active`                             | `active` counts only working/waiting background/agent sessions as a `+N` suffix; `count` counts idle ones too; `hide` reports only the interactive session |
 | `CLAUDE_WAYBAR_MAIN`         | `working`                            | `working` counts the interactive session only while it is working; `always` counts it in every state |
 | `CLAUDE_WAYBAR_COLOR_WAITING`/`_WORKING`/`_IDLE` | `#e0af68`/`#9ece6a`/`#7f849c` | per-state colours for the mixed-session breakdown |
 
