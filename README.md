@@ -65,6 +65,19 @@ The hooks map lifecycle events to states:
 > submitted), so the bar could get stuck on `waiting` while actively working.
 > Mapping `PreToolUse → working` clears that the moment a tool runs.
 
+> **`Notification` is not only permission prompts.** Claude Code also fires it
+> for the "input idle for 60s" nag and for background-job completion / away
+> summaries, and both of those arrive *after* the turn has ended - `Stop` has
+> already recorded `idle`. Taken at face value they overwrote `idle` with
+> `waiting`, parking finished jobs on the bar in amber with nothing to ever
+> demote them, so completed background jobs piled up. `waiting` is therefore
+> only recorded when the session is currently `working`: a genuine permission
+> prompt always interrupts a turn in progress (`UserPromptSubmit` /`PreToolUse`
+> have just written `working`, since `PreToolUse` hooks run *before* the
+> permission check), while a nag or summary always arrives from `idle`. With no
+> prior state file the notification is recorded as `waiting` regardless - better
+> a spurious badge than a swallowed permission prompt.
+
 There is no polling of Claude itself; the hooks push state as it changes. The
 module's `interval` is only a safety net (it also prunes crashed sessions).
 

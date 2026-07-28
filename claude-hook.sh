@@ -65,6 +65,31 @@ session_kind() {
     esac
 }
 
+# 'Notification' does not mean "blocked on a permission prompt". Claude Code
+# also fires it for the "input idle for 60s" nag and for background-job
+# completion / away summaries, and those arrive *after* the turn is over: Stop
+# has already written 'idle', so the notification would overwrite it with
+# 'waiting' and park a finished job on the bar in amber. Nothing demotes it
+# again (unlike 'working', which WORK_TIMEOUT catches), so every completed
+# background job used to leave one behind.
+#
+# The two cases are told apart by the state they arrive from, which needs no
+# extra bookkeeping: a real permission prompt happens mid-turn, when
+# UserPromptSubmit/PreToolUse has just written 'working' (PreToolUse hooks run
+# before the permission check, so that ordering holds). A completion or idle
+# nag happens post-turn, from 'idle'. Only promote out of 'working'.
+#
+# With no prior state file at all, fall through and record 'waiting' — better a
+# spurious badge than a swallowed permission prompt. Unclaimed pre-warmed spares
+# firing stray notifications are filtered by claude-status.sh instead, on the
+# absence of a session transcript.
+if [ "$STATUS" = "waiting" ] && [ -f "$state_file" ]; then
+    IFS=$'\t' read -r prev_status _ < "$state_file" || prev_status=""
+    if [ "$prev_status" != "working" ]; then
+        exit 0
+    fi
+fi
+
 if [ "$STATUS" = "end" ]; then
     rm -f "$state_file"
 else
