@@ -32,8 +32,26 @@ AGENTS="${CLAUDE_WAYBAR_AGENTS:-active}"
 # 'always' restores counting it in every state (useful if you keep sessions on
 # other workspaces and want their permission prompts on the bar).
 MAIN="${CLAUDE_WAYBAR_MAIN:-working}"
+# Claude Code writes a transcript per real session under this directory. A
+# pre-warmed `claude bg-spare` worker fires SessionStart (so it gets a state
+# file) but never gets a transcript until it is claimed and given real work, so
+# the presence of a transcript is what separates an agent you actually started
+# from a phantom. Set to empty to disable the check.
+PROJECTS_DIR="${CLAUDE_WAYBAR_PROJECTS_DIR:-$HOME/.claude/projects}"
 
 mkdir -p "$STATE_DIR"
+
+# True when this session has a transcript on disk, i.e. it is a session rather
+# than an unclaimed spare. Errs towards "real": if the project directory for
+# this cwd does not exist at all (custom CLAUDE_CONFIG_DIR, transcripts
+# disabled) the check is skipped rather than hiding every agent.
+has_transcript() {
+    local id="$1" cwd="$2" dir
+    [ -z "$PROJECTS_DIR" ] && return 0
+    dir="$PROJECTS_DIR/${cwd//[^a-zA-Z0-9]/-}"
+    [ -d "$dir" ] || return 0
+    [ -f "$dir/$id.jsonl" ]
+}
 
 now="$(date +%s)"
 waiting=0 working=0 idle=0
@@ -73,6 +91,15 @@ for f in "$STATE_DIR"/*; do
     if [ "$AGENTS" = "hide" ] && [ "$kind" = "agent" ]; then
         continue
     fi
+    # Drop pre-warmed spares. They fire SessionStart, so they own a state file
+    # and a live PID, but never get a transcript until they are claimed. Left in
+    # they show up as agents that were never started — and one stuck at
+    # 'waiting' turns the whole badge amber as if a permission prompt were
+    # pending. Only agents are checked: the interactive session is never a
+    # spare, and hiding it mid-startup would be worse than showing it early.
+    if [ "$kind" = "agent" ] && ! has_transcript "${f##*/}" "$cwd"; then
+        continue
+    fi
     if [ "$kind" = "agent" ]; then
         case "$status" in
             waiting) a_waiting=$((a_waiting+1)) ;;
@@ -102,18 +129,9 @@ tooltip="${tooltip}${tooltip_agents}"
 
 agents=$((a_waiting+a_working+a_idle))
 
-# When no interactive session is registered (it may not have fired a hook yet)
-# the agents stand in for it, so the label is built from their counts instead of
-# reporting nothing. Otherwise agents only ever contribute the "+N" suffix.
-if [ $((waiting+working+idle)) -eq 0 ] && [ "$agents" -gt 0 ]; then
-    waiting=$a_waiting working=$a_working idle=$a_idle
-    a_waiting=0 a_working=0 a_idle=0
-    agents=0
-fi
-
 total=$((waiting+working+idle))
 
-if [ "$total" -eq 0 ]; then
+if [ $((total+agents)) -eq 0 ]; then
     # No active Claude sessions — emit empty text so the module collapses.
     printf '{"text":"","class":"none","tooltip":false}\n'
     exit 0
@@ -146,7 +164,14 @@ states=0
 [ "$working" -gt 0 ] && states=$((states+1))
 [ "$idle"    -gt 0 ] && states=$((states+1))
 
-if [ "$states" -le 1 ]; then
+if [ "$total" -eq 0 ]; then
+    # Nothing to say about the interactive session: it is idle or waiting under
+    # MAIN=working, or it has not registered a state file yet. The agent suffix
+    # below carries the label on its own — previously the agent counts were
+    # copied into the main slot here, which dropped the "+N" entirely and read
+    # as though the agents were terminals you were sitting in front of.
+    text="claude"
+elif [ "$states" -le 1 ]; then
     [ "$waiting" -gt 0 ] && word="waiting"
     [ "$working" -gt 0 ] && word="working"
     [ "$idle"    -gt 0 ] && word="idle"

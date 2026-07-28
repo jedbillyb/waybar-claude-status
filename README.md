@@ -98,6 +98,18 @@ started - the classic symptom being a stray `1 idle` next to your real agents.
 A finished agent whose process lingers looks the same. They stay in the
 tooltip, just out of the badge.
 
+Spares are also filtered out directly, which matters because an unclaimed one
+does not always sit at `idle` - it can fire `Notification` and land on
+`waiting`, turning the whole badge amber as if a permission prompt were pending
+when nothing was ever started. A real session has a transcript at
+`~/.claude/projects/<slugged-cwd>/<session_id>.jsonl`; a spare has a state file
+and a live PID but no transcript until it is claimed and given work. Agents
+without one are dropped from the badge *and* the tooltip, whatever their state.
+Point `CLAUDE_WAYBAR_PROJECTS_DIR` elsewhere if your transcripts live outside
+`~/.claude/projects`, or set it empty to disable the check. If the directory for
+a session's cwd does not exist at all the check is skipped rather than hiding
+every agent.
+
 Set `CLAUDE_WAYBAR_AGENTS=count` for the old behaviour (idle agents counted
 too), or `CLAUDE_WAYBAR_AGENTS=hide` to report only the session you are typing
 in; hidden sessions are still pruned, so nothing accumulates.
@@ -115,10 +127,16 @@ So the label reads:
 |----------------------------------|----------------------|
 | terminal working, no agents      | `claude working`     |
 | terminal working, 3 agents       | `claude working +3`  |
-| terminal idle, 3 agents working  | `claude working (3)` |
+| terminal idle, 3 agents working  | `claude +3`          |
 | terminal working, 2 agents working + 1 idle | `claude working +2` |
 | terminal idle, no agents         | *(module collapses)* |
 | terminal idle, only idle agents  | *(module collapses)* |
+
+Agents are *always* the `+N` suffix - they never occupy the main slot. When
+there is nothing to say about the interactive session (idle or waiting under the
+default `CLAUDE_WAYBAR_MAIN=working`, or it has not registered yet) the label is
+just `claude +N`, not a breakdown that reads as though those agents were
+terminals you were sitting in front of.
 
 The `+N` suffix is coloured by the agents' own highest-priority state, so a
 background job hitting a permission prompt turns it amber even while your own
@@ -161,6 +179,7 @@ your session):
 | `CLAUDE_WAYBAR_WORK_TIMEOUT` | `90`                                 | a `working` session idle this long (no hook activity) is shown as `idle` (interrupt fallback) |
 | `CLAUDE_WAYBAR_AGENTS`       | `active`                             | `active` counts only working/waiting background/agent sessions as a `+N` suffix; `count` counts idle ones too; `hide` reports only the interactive session |
 | `CLAUDE_WAYBAR_MAIN`         | `working`                            | `working` counts the interactive session only while it is working; `always` counts it in every state |
+| `CLAUDE_WAYBAR_PROJECTS_DIR` | `~/.claude/projects`                 | where Claude Code keeps session transcripts; used to tell a real agent from an unclaimed pre-warmed spare. Set empty to disable the check |
 | `CLAUDE_WAYBAR_COLOR_WAITING`/`_WORKING`/`_IDLE` | `#e0af68`/`#9ece6a`/`#7f849c` | per-state colours for the mixed-session breakdown |
 
 If you already use `SIGRTMIN+10` for another module, pick a free number and set
