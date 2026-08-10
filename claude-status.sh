@@ -27,10 +27,12 @@ WORK_TIMEOUT="${CLAUDE_WAYBAR_WORK_TIMEOUT:-90}"
 # 'count' includes idle agents too; 'hide' keeps the module reporting only the
 # session you are typing in.
 AGENTS="${CLAUDE_WAYBAR_AGENTS:-active}"
-# The interactive session is the one you are looking at, so an idle or waiting
-# terminal does not need a badge — only count it while it is actually working.
-# 'always' restores counting it in every state (useful if you keep sessions on
-# other workspaces and want their permission prompts on the bar).
+# The interactive session is the one you are looking at, so a merely idle
+# terminal does not need a badge. 'waiting' is always counted regardless of
+# this setting though — a pending permission prompt or AskUserQuestion is
+# exactly the case the badge exists for, especially when you've alt-tabbed
+# away from it. 'always' additionally counts idle (useful if you keep sessions
+# on other workspaces).
 MAIN="${CLAUDE_WAYBAR_MAIN:-working}"
 # Claude Code writes a transcript per real session under this directory. A
 # pre-warmed `claude bg-spare` worker fires SessionStart (so it gets a state
@@ -107,7 +109,7 @@ for f in "$STATE_DIR"/*; do
             # Idle agents only reach the badge under AGENTS=count; see above.
             *)       if [ "$AGENTS" = "count" ]; then a_idle=$((a_idle+1)); fi ;;
         esac
-    elif [ "$MAIN" = "always" ] || [ "$status" = "working" ]; then
+    elif [ "$MAIN" = "always" ] || [ "$status" = "working" ] || [ "$status" = "waiting" ]; then
         case "$status" in
             waiting) waiting=$((waiting+1)) ;;
             working) working=$((working+1)) ;;
