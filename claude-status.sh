@@ -40,6 +40,15 @@ MAIN="${CLAUDE_WAYBAR_MAIN:-working}"
 # the presence of a transcript is what separates an agent you actually started
 # from a phantom. Set to empty to disable the check.
 PROJECTS_DIR="${CLAUDE_WAYBAR_PROJECTS_DIR:-$HOME/.claude/projects}"
+# Background jobs keep their own state under this directory, one dir per job
+# holding a state.json with the job's sessionId and state. A job that ends its
+# turn asking the user something goes to state 'blocked', but Claude Code fires
+# no hook for that: the turn ended, so Stop has already written 'idle' and no
+# Notification follows (that only covers mid-turn permission prompts). The job
+# therefore sat on the bar in grey while it was in fact the one thing you needed
+# to look at. Reading the job state directly is what catches it. Set to empty to
+# disable.
+JOBS_DIR="${CLAUDE_WAYBAR_JOBS_DIR:-$HOME/.claude/jobs}"
 
 mkdir -p "$STATE_DIR"
 
@@ -65,6 +74,20 @@ tooltip=""
 tooltip_agents=""
 
 shopt -s nullglob
+
+# Session ids of background jobs currently blocked on the user, space-delimited
+# and space-padded so a plain glob match can't hit a partial id. jq is already a
+# dependency of the hook; without it the check degrades to the old behaviour
+# rather than failing.
+blocked_ids=" "
+if [ -n "$JOBS_DIR" ] && command -v jq >/dev/null 2>&1; then
+    job_states=("$JOBS_DIR"/*/state.json)
+    if [ "${#job_states[@]}" -gt 0 ]; then
+        blocked_ids=" $(jq -r 'select(.state == "blocked") | .sessionId // empty' \
+            "${job_states[@]}" 2>/dev/null | tr '\n' ' ')"
+    fi
+fi
+
 for f in "$STATE_DIR"/*; do
     [ -f "$f" ] || continue
     # 'kind' (main|agent) is absent in files written by older hook versions;
@@ -88,6 +111,11 @@ for f in "$STATE_DIR"/*; do
     if [ "$status" = "working" ] && [ $(( now - ts )) -gt "$WORK_TIMEOUT" ]; then
         status="idle"
     fi
+    # A job blocked on the user outranks whatever the hooks last recorded, and
+    # is applied after the timeout above so it can't be demoted back to idle.
+    case "$blocked_ids" in
+        *" ${f##*/} "*) status="waiting" ;;
+    esac
     # Skip after pruning, never before, so hidden agent sessions still get
     # their stale files cleaned up.
     if [ "$AGENTS" = "hide" ] && [ "$kind" = "agent" ]; then

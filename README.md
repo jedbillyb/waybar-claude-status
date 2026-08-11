@@ -123,6 +123,21 @@ Point `CLAUDE_WAYBAR_PROJECTS_DIR` elsewhere if your transcripts live outside
 a session's cwd does not exist at all the check is skipped rather than hiding
 every agent.
 
+### Background jobs blocked on you
+
+A background job that finishes its turn asking you a question fires no hook that
+says so. The turn ended, so `Stop` has already written `idle`, and `Notification`
+only covers prompts that interrupt a turn mid-flight - so the one session
+actually waiting on you sat on the bar in grey.
+
+Claude Code records this itself: each background job keeps a
+`~/.claude/jobs/<job>/state.json`, and a job waiting on you is in state
+`blocked`. Any session whose id appears there is shown as `waiting` regardless of
+what the hooks last recorded, applied after the `working` timeout so it cannot be
+demoted back to `idle`. Point `CLAUDE_WAYBAR_JOBS_DIR` elsewhere if your jobs
+live outside `~/.claude/jobs`, or set it empty to disable the check; without
+`jq` the check is skipped rather than failing.
+
 Set `CLAUDE_WAYBAR_AGENTS=count` for the old behaviour (idle agents counted
 too), or `CLAUDE_WAYBAR_AGENTS=hide` to report only the session you are typing
 in; hidden sessions are still pruned, so nothing accumulates.
@@ -193,6 +208,7 @@ your session):
 | `CLAUDE_WAYBAR_AGENTS`       | `active`                             | `active` counts only working/waiting background/agent sessions as a `+N` suffix; `count` counts idle ones too; `hide` reports only the interactive session |
 | `CLAUDE_WAYBAR_MAIN`         | `working`                            | `working` counts the interactive session only while it is working; `always` counts it in every state |
 | `CLAUDE_WAYBAR_PROJECTS_DIR` | `~/.claude/projects`                 | where Claude Code keeps session transcripts; used to tell a real agent from an unclaimed pre-warmed spare. Set empty to disable the check |
+| `CLAUDE_WAYBAR_JOBS_DIR`     | `~/.claude/jobs`                     | where Claude Code keeps background-job state; a job in state `blocked` is shown as `waiting`. Set empty to disable the check |
 | `CLAUDE_WAYBAR_COLOR_WAITING`/`_WORKING`/`_IDLE` | `#e0af68`/`#9ece6a`/`#7f849c` | per-state colours for the mixed-session breakdown |
 
 If you already use `SIGRTMIN+10` for another module, pick a free number and set
