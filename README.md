@@ -78,6 +78,22 @@ The hooks map lifecycle events to states:
 > prior state file the notification is recorded as `waiting` regardless - better
 > a spurious badge than a swallowed permission prompt.
 
+> **The prior-state guard is not enough on its own.** The payload also carries a
+> `notification_type`, and the benign kinds are filtered on it directly. The one
+> that actually bit was `idle_prompt`, the "Claude is waiting for your input" nag
+> fired ~60s after a session goes quiet. Backgrounding a turn (`Ctrl-B`) moves
+> the work to a job and fires no `Stop` hook, so the interactive session was
+> still recorded as `working` when the nag landed - it passed the guard and left
+> the bar reading `claude waiting` with nothing actually waiting, permanently,
+> since nothing demotes `waiting`.
+>
+> Filtered out: `idle_prompt`, `agent_completed`, `auth_success`,
+> `push_notification`, `computer_use_enter`/`_exit`, `elicitation_complete`/
+> `_response`. It is a denylist rather than an allowlist on purpose - an
+> unrecognised or absent type still counts as `waiting`, so a future Claude Code
+> release adding a type cannot silently make the module go quiet on a real
+> prompt.
+
 There is no polling of Claude itself; the hooks push state as it changes. The
 module's `interval` is only a safety net (it also prunes crashed sessions).
 

@@ -21,9 +21,11 @@ mkdir -p "$STATE_DIR"
 payload="$(cat 2>/dev/null || true)"
 session_id=""
 cwd=""
+notification_type=""
 if [ -n "$payload" ] && command -v jq >/dev/null 2>&1; then
     session_id="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null || true)"
     cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null || true)"
+    notification_type="$(printf '%s' "$payload" | jq -r '.notification_type // empty' 2>/dev/null || true)"
 fi
 [ -z "$session_id" ] && session_id="unknown-$$"
 
@@ -64,6 +66,29 @@ session_kind() {
         *)                                  printf 'main' ;;
     esac
 }
+
+# The Notification payload carries a 'notification_type', and most of its values
+# are not a request for you to do anything. Filtering on it is the precise fix;
+# the prior-state guard below is the backstop for the ones it cannot name.
+#
+# This is a denylist, not an allowlist, and deliberately so: an unrecognised or
+# absent type still counts as waiting, keeping the "better a spurious badge than
+# a swallowed permission prompt" bias. New Claude Code releases can add types
+# without this silently going quiet on a real prompt.
+#
+# 'idle_prompt' is the one that actually bit: it is the "Claude is waiting for
+# your input" nag, fired ~60s after the session goes quiet. Backgrounding a turn
+# (Ctrl-B) leaves the interactive session recorded as 'working' and fires no
+# Stop hook, so the nag arrived from 'working', sailed past the prior-state
+# guard, and parked the bar in amber for good with nothing to demote it. That is
+# the "claude waiting when nothing is waiting" case.
+case "$notification_type" in
+    idle_prompt|agent_completed|auth_success|push_notification|\
+    computer_use_enter|computer_use_exit|\
+    elicitation_complete|elicitation_response)
+        [ "$STATUS" = "waiting" ] && exit 0
+        ;;
+esac
 
 # 'Notification' does not mean "blocked on a permission prompt". Claude Code
 # also fires it for the "input idle for 60s" nag and for background-job
