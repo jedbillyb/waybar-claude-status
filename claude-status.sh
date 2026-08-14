@@ -1,163 +1,152 @@
 #!/bin/bash
 # claude-status.sh — waybar custom module for Claude Code session status.
 #
-# Aggregates the per-session state files written by claude-hook.sh and emits
-# one line of JSON ({"text","class","tooltip"}) for waybar to render.
+# Emits one line of JSON ({"text","class","tooltip"}) for waybar to render.
 #
 # Priority when several sessions are active:  waiting > working > idle.
-# Stale files (crashed sessions that never fired an end hook) are pruned.
+#
+# This reads Claude Code's own live state files rather than reconstructing state
+# from hook events. Hooks are events, and several transitions fire no event at
+# all: backgrounding a turn fires no Stop, a job going blocked fires nothing, an
+# Esc interrupt fires nothing. A state machine driven only by those events gets
+# stuck, and every correction for one stuck case (activity timeouts, orphan
+# pruning, notification filtering) was another guess layered on the last.
+#
+# Claude Code publishes what it is actually doing:
+#
+#   ~/.claude/sessions/<pid>.json      kind: interactive|bg, status: busy|idle,
+#                                      sessionId, cwd, name — rewritten live
+#   ~/.claude/jobs/<short-id>/state.json   state: working|blocked|done|failed
+#                                      — 'blocked' is the real "needs input"
+#
+# So those are the source of truth, and the hook state file is consulted for
+# exactly one thing it alone knows: a permission prompt interrupting a turn in
+# the interactive session. See claude-hook.sh.
 set -euo pipefail
 
+# Written by claude-hook.sh. Only the interactive session's entry is read; the
+# rest is kept pruned so nothing accumulates.
 STATE_DIR="${CLAUDE_WAYBAR_STATE_DIR:-$HOME/.cache/claude-waybar/sessions}"
-STALE_SECS="${CLAUDE_WAYBAR_STALE_SECS:-86400}"   # drop sessions older than 24h
-# A 'working' session with no hook activity for this long is shown as idle.
-# Claude Code fires no hook on user interrupt (Esc), so 'working' can otherwise
-# get stuck; PreToolUse/PostToolUse refresh the timestamp during real work.
-WORK_TIMEOUT="${CLAUDE_WAYBAR_WORK_TIMEOUT:-90}"
+STALE_SECS="${CLAUDE_WAYBAR_STALE_SECS:-86400}"   # drop hook files older than 24h
+# Claude Code's live per-process session state, one <pid>.json per session. This
+# is the enumeration: a session with no file here is not running.
+SESSIONS_DIR="${CLAUDE_WAYBAR_SESSIONS_DIR:-$HOME/.claude/sessions}"
+# Claude Code's background-job state, one directory per job named after the first
+# 8 characters of the session id.
+JOBS_DIR="${CLAUDE_WAYBAR_JOBS_DIR:-$HOME/.claude/jobs}"
+
 # Background jobs and Task/agent sessions are separate sessions with their own
-# state files, so a single terminal running agents legitimately reports several.
+# state, so a single terminal running agents legitimately reports several.
 #
-# 'active' (default) counts only agents that are working or waiting. Claude Code
-# keeps pre-warmed `claude bg-spare` workers around for background jobs; each
-# fires SessionStart and then sits at 'idle' until it is claimed, so counting
-# idle agents put phantom sessions on the bar that were never started. A
-# finished agent
-# whose process lingers looks the same. Either way an idle agent is nothing to
-# glance at, so it stays out of the badge and remains listed in the tooltip.
-# 'count' includes idle agents too; 'hide' keeps the module reporting only the
-# session you are typing in.
+# 'active' (default) counts only agents that are working or waiting. An idle
+# agent is nothing to glance at, so it stays out of the badge and remains listed
+# in the tooltip. 'count' includes idle agents too; 'hide' keeps the module
+# reporting only the session you are typing in.
 AGENTS="${CLAUDE_WAYBAR_AGENTS:-active}"
 # The interactive session is the one you are looking at, so a merely idle
-# terminal does not need a badge. 'waiting' is always counted regardless of
-# this setting though — a pending permission prompt or AskUserQuestion is
-# exactly the case the badge exists for, especially when you've alt-tabbed
-# away from it. 'always' additionally counts idle (useful if you keep sessions
-# on other workspaces).
+# terminal does not need a badge. 'waiting' is always counted regardless — a
+# pending permission prompt is exactly the case the badge exists for, especially
+# when you've alt-tabbed away. 'always' additionally counts idle.
 MAIN="${CLAUDE_WAYBAR_MAIN:-working}"
-# Claude Code writes a transcript per real session under this directory. A
-# pre-warmed `claude bg-spare` worker fires SessionStart (so it gets a state
-# file) but never gets a transcript until it is claimed and given real work, so
-# the presence of a transcript is what separates an agent you actually started
-# from a phantom. Set to empty to disable the check.
-PROJECTS_DIR="${CLAUDE_WAYBAR_PROJECTS_DIR:-$HOME/.claude/projects}"
-# Background jobs keep their own state under this directory, one dir per job
-# holding a state.json with the job's sessionId and state. A job that ends its
-# turn asking the user something goes to state 'blocked', but Claude Code fires
-# no hook for that: the turn ended, so Stop has already written 'idle' and no
-# Notification follows (that only covers mid-turn permission prompts). The job
-# therefore sat on the bar in grey while it was in fact the one thing you needed
-# to look at. Reading the job state directly is what catches it. Set to empty to
-# disable.
-JOBS_DIR="${CLAUDE_WAYBAR_JOBS_DIR:-$HOME/.claude/jobs}"
-# Claude Code also keeps a live per-process file here, named <pid>.json, holding
-# 'kind' (interactive|bg) and 'status' (busy|idle|...). This is the freshest view
-# of what a session is doing, and it is needed because the job state above lags:
-# when you answer a blocked job it goes back to work immediately, but its
-# state.json can still read 'blocked' for a minute or more (the answer shows up
-# as the job's 'detail' while 'state' trails behind). Taken alone that reported
-# jobs as waiting after they had resumed. A 'busy' session therefore vetoes a
-# stale 'blocked'. Set to empty to disable the veto.
-SESSIONS_DIR="${CLAUDE_WAYBAR_SESSIONS_DIR:-$HOME/.claude/sessions}"
 
 mkdir -p "$STATE_DIR"
 
-# True when Claude Code currently considers this process to be actively working.
-# Only a positive 'busy' counts: a missing or unreadable file must not veto a
-# genuine block, so the answer errs towards leaving 'blocked' alone.
-session_is_busy() {
-    local pid="$1"
-    [ -z "$SESSIONS_DIR" ] && return 1
-    [ -n "$pid" ] || return 1
-    [ -f "$SESSIONS_DIR/$pid.json" ] || return 1
-    [ "$(jq -r '.status // empty' "$SESSIONS_DIR/$pid.json" 2>/dev/null)" = "busy" ]
-}
-
-# True when this session has a transcript on disk, i.e. it is a session rather
-# than an unclaimed spare. Errs towards "real": if the project directory for
-# this cwd does not exist at all (custom CLAUDE_CONFIG_DIR, transcripts
-# disabled) the check is skipped rather than hiding every agent.
-has_transcript() {
-    local id="$1" cwd="$2" dir
-    [ -z "$PROJECTS_DIR" ] && return 0
-    dir="$PROJECTS_DIR/${cwd//[^a-zA-Z0-9]/-}"
-    [ -d "$dir" ] || return 0
-    [ -f "$dir/$id.jsonl" ]
-}
-
 now="$(date +%s)"
-waiting=0 working=0 idle=0
-# Agent/background sessions are counted separately from the interactive ones, so
-# the label can read "claude idle +3" instead of folding your own terminal into
-# the agent count and claiming 4 sessions when you started 3 agents.
-a_waiting=0 a_working=0 a_idle=0
-tooltip=""
-tooltip_agents=""
 
 shopt -s nullglob
 
-# Session ids of background jobs currently blocked on the user, space-delimited
-# and space-padded so a plain glob match can't hit a partial id. jq is already a
-# dependency of the hook; without it the check degrades to the old behaviour
-# rather than failing.
-blocked_ids=" "
-if [ -n "$JOBS_DIR" ] && command -v jq >/dev/null 2>&1; then
-    job_states=("$JOBS_DIR"/*/state.json)
-    if [ "${#job_states[@]}" -gt 0 ]; then
-        blocked_ids=" $(jq -r 'select(.state == "blocked") | .sessionId // empty' \
-            "${job_states[@]}" 2>/dev/null | tr '\n' ' ')"
-    fi
+# ---------------------------------------------------------------------------
+# Read Claude Code's state. Two jq invocations total, whatever the session count.
+# ---------------------------------------------------------------------------
+
+# sessionId -> job state, for background jobs. A bg session with no entry here is
+# an unclaimed pre-warmed `claude bg-spare` worker: it has a session file and a
+# live pid but was never given work, and counting those put phantom agents on the
+# bar. Having a job directory is what separates an agent you actually started.
+declare -A job_state=()
+job_files=("$JOBS_DIR"/*/state.json)
+if [ -n "$JOBS_DIR" ] && [ "${#job_files[@]}" -gt 0 ]; then
+    while IFS=$'\t' read -r sid st; do
+        [ -n "$sid" ] && job_state["$sid"]="$st"
+    done < <(jq -r '[(.sessionId // ""), (.state // "")] | @tsv' \
+                "${job_files[@]}" 2>/dev/null || true)
 fi
 
+# The interactive session's hook-recorded status, keyed by session id. Only
+# 'waiting' is meaningful: it means a permission prompt interrupted the turn,
+# which the sessions file does not distinguish from ordinary work.
+declare -A hook_status=()
 for f in "$STATE_DIR"/*; do
     [ -f "$f" ] || continue
-    # 'kind' (main|agent) is absent in files written by older hook versions;
-    # treat those as main sessions.
-    IFS=$'\t' read -r status ts cwd pid kind < "$f" || continue
-    [ -z "${kind:-}" ] && kind="main"
-    [ -z "${ts:-}" ] && ts=0
-    # Prune orphans: if the owning claude PID is recorded but no longer alive,
-    # the session died without firing its 'end' hook (crash/kill/close). This
-    # is the primary cleanup; the timeouts below are backstops for older files
-    # written before PIDs were tracked, or PID reuse edge cases.
-    if [ -n "${pid:-}" ] && ! kill -0 "$pid" 2>/dev/null; then
+    IFS=$'\t' read -r hs hts _ hpid _ < "$f" || continue
+    # The hook dir is ours, so prune it here. A dead pid means the session went
+    # away without firing SessionEnd (crash, killed terminal); the age check is a
+    # backstop for files written before pids were recorded.
+    if { [ -n "${hpid:-}" ] && ! kill -0 "$hpid" 2>/dev/null; } ||
+       [ $(( now - ${hts:-0} )) -gt "$STALE_SECS" ]; then
         rm -f "$f"
         continue
     fi
-    if [ $(( now - ts )) -gt "$STALE_SECS" ]; then
-        rm -f "$f"
-        continue
+    hook_status["${f##*/}"]="$hs"
+done
+
+# ---------------------------------------------------------------------------
+# Classify every live session.
+# ---------------------------------------------------------------------------
+
+waiting=0 working=0 idle=0          # the interactive session
+a_waiting=0 a_working=0 a_idle=0    # background/agent sessions
+tooltip="" tooltip_agents=""
+
+session_files=("$SESSIONS_DIR"/*.json)
+if [ "${#session_files[@]}" -gt 0 ]; then
+while IFS=$'\t' read -r pid kind cc_status sid cwd name; do
+    [ -n "$pid" ] || continue
+    # Claude Code owns these files and does not always remove them promptly, so
+    # liveness is decided by the process, not the file.
+    kill -0 "$pid" 2>/dev/null || continue
+
+    # Job directories are named after the short id, but their state.json carries
+    # the full sessionId, which is what the map is keyed by.
+    short="${sid:0:8}"
+    jstate="${job_state[$sid]-}"
+
+    if [ "$kind" = "bg" ]; then
+        # No job directory means an unclaimed spare, not an agent you started.
+        [ -n "$jstate" ] || continue
+
+        # 'blocked' is the job waiting on you. It is authoritative except when
+        # the session is busy: answering a blocked job puts it straight back to
+        # work, but state.json can lag a minute or more behind (your answer shows
+        # up as the job's 'detail' while 'state' trails), which reported jobs as
+        # waiting well after they had resumed.
+        if [ "$jstate" = "blocked" ] && [ "$cc_status" != "busy" ]; then
+            status="waiting"
+        elif [ "$cc_status" = "busy" ]; then
+            status="working"
+        else
+            status="idle"
+        fi
+    else
+        # The interactive session. A permission prompt interrupts a live turn, so
+        # the session reads busy and only the hook knows it is actually blocked;
+        # once the turn is over (idle) any lingering hook 'waiting' is stale.
+        if [ "${hook_status[$sid]-}" = "waiting" ] && [ "$cc_status" != "idle" ]; then
+            status="waiting"
+        elif [ "$cc_status" = "busy" ]; then
+            status="working"
+        else
+            status="idle"
+        fi
     fi
-    # No interrupt hook exists, so demote a stale 'working' session to idle.
-    if [ "$status" = "working" ] && [ $(( now - ts )) -gt "$WORK_TIMEOUT" ]; then
-        status="idle"
-    fi
-    # A job blocked on the user outranks whatever the hooks last recorded, and
-    # is applied after the timeout above so it can't be demoted back to idle.
-    # Unless the session is busy right now, which means the job has already been
-    # answered and its state.json simply has not caught up yet.
-    case "$blocked_ids" in
-        *" ${f##*/} "*) session_is_busy "${pid:-}" || status="waiting" ;;
-    esac
-    # Skip after pruning, never before, so hidden agent sessions still get
-    # their stale files cleaned up.
-    if [ "$AGENTS" = "hide" ] && [ "$kind" = "agent" ]; then
-        continue
-    fi
-    # Drop pre-warmed spares. They fire SessionStart, so they own a state file
-    # and a live PID, but never get a transcript until they are claimed. Left in
-    # they show up as agents that were never started — and one stuck at
-    # 'waiting' turns the whole badge amber as if a permission prompt were
-    # pending. Only agents are checked: the interactive session is never a
-    # spare, and hiding it mid-startup would be worse than showing it early.
-    if [ "$kind" = "agent" ] && ! has_transcript "${f##*/}" "$cwd"; then
-        continue
-    fi
-    if [ "$kind" = "agent" ]; then
+
+    if [ "$kind" = "bg" ]; then
+        [ "$AGENTS" = "hide" ] && continue
         case "$status" in
             waiting) a_waiting=$((a_waiting+1)) ;;
             working) a_working=$((a_working+1)) ;;
             # Idle agents only reach the badge under AGENTS=count; see above.
-            *)       if [ "$AGENTS" = "count" ]; then a_idle=$((a_idle+1)); fi ;;
+            *)       [ "$AGENTS" = "count" ] && a_idle=$((a_idle+1)) ;;
         esac
     elif [ "$MAIN" = "always" ] || [ "$status" = "working" ] || [ "$status" = "waiting" ]; then
         case "$status" in
@@ -166,21 +155,34 @@ for f in "$STATE_DIR"/*; do
             *)       idle=$((idle+1)) ;;
         esac
     fi
-    label="${cwd##*/}"
+
+    # A background job's name says what it is doing ("wallpaper widget inbox
+    # review"), which beats the cwd every time. The interactive session's name is
+    # a generated handle, so that one keeps the directory.
+    if [ "$kind" = "bg" ] && [ -n "$name" ] && [ "$name" != "$short" ]; then
+        label="$name"
+    else
+        label="${cwd##*/}"
+    fi
     [ -z "$label" ] && label="?"
-    # Mark background/agent sessions so a count above 1 is self-explanatory
-    # when only one terminal is open, and list them after the interactive ones.
-    if [ "$kind" = "agent" ]; then
-        tooltip_agents="${tooltip_agents}${status}\t${label} (agent)\n"
+
+    # Mark agents so a count above 1 is self-explanatory when only one terminal
+    # is open, and list them after the interactive session.
+    if [ "$kind" = "bg" ]; then
+        tooltip_agents="${tooltip_agents}${status}\t${label}\n"
     else
         tooltip="${tooltip}${status}\t${label}\n"
     fi
-done
+done < <(jq -r 'input_filename as $f
+                | [ ($f | split("/") | last | sub("\\.json$"; "")),
+                    (.kind // ""), (.status // ""), (.sessionId // ""),
+                    (.cwd // ""), (.name // "") ] | @tsv' \
+            "${session_files[@]}" 2>/dev/null || true)
+fi
 
 tooltip="${tooltip}${tooltip_agents}"
 
 agents=$((a_waiting+a_working+a_idle))
-
 total=$((waiting+working+idle))
 
 if [ $((total+agents)) -eq 0 ]; then
@@ -196,8 +198,8 @@ COLOR_WORKING="${CLAUDE_WAYBAR_COLOR_WORKING:-#9ece6a}"
 COLOR_IDLE="${CLAUDE_WAYBAR_COLOR_IDLE:-#7f849c}"
 
 # Colour follows the highest-priority state present: waiting > working > idle.
-# Agents count towards it: an agent stuck on a permission prompt is the whole
-# reason to glance at the bar.
+# Agents count towards it: an agent stuck on a prompt is the whole reason to
+# glance at the bar.
 if [ $((waiting+a_waiting)) -gt 0 ]; then
     class="waiting"
 elif [ $((working+a_working)) -gt 0 ]; then
@@ -218,10 +220,8 @@ states=0
 
 if [ "$total" -eq 0 ]; then
     # Nothing to say about the interactive session: it is idle or waiting under
-    # MAIN=working, or it has not registered a state file yet. The agent suffix
-    # below carries the label on its own — previously the agent counts were
-    # copied into the main slot here, which dropped the "+N" entirely and read
-    # as though the agents were terminals you were sitting in front of.
+    # MAIN=working, or it is not running. The agent suffix below carries the
+    # label on its own.
     text="claude"
 elif [ "$states" -le 1 ]; then
     [ "$waiting" -gt 0 ] && word="waiting"

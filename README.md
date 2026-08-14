@@ -42,11 +42,51 @@ working directory.
 
 ## How it works
 
+`claude-status.sh` is the waybar `exec` module. It reads **Claude Code's own live
+state files** and prints JSON:
+
+| File | Fields used | What it settles |
+|------|-------------|-----------------|
+| `~/.claude/sessions/<pid>.json` | `kind` (`interactive`\|`bg`), `status` (`busy`\|`idle`), `sessionId`, `cwd`, `name` | which sessions exist, and which are working |
+| `~/.claude/jobs/<short-id>/state.json` | `state` (`working`\|`blocked`\|`done`\|`failed`), `sessionId` | which background jobs need input (`blocked`) |
+
+Classification is one pass over `sessions/*.json`:
+
+```
+dead pid                     -> skip (Claude Code does not always clean up)
+kind=bg with no job dir      -> unclaimed pre-warmed spare, skip
+job state = blocked, not busy-> waiting
+session status = busy        -> working
+otherwise                    -> idle
+```
+
+The interactive session gets one extra check, described under
+[Permission prompts](#permission-prompts) below.
+
+### Why not hooks?
+
+It used to work the other way round: hooks drove a state machine and the state
+files were the only input. Hooks are *events*, and several transitions fire no
+event at all - backgrounding a turn fires no `Stop`, a job going `blocked` fires
+nothing, an `Esc` interrupt fires nothing. A state machine fed only by those
+events gets stuck, and each fix for one stuck case (activity timeouts, orphan
+pruning by pid, transcript-presence checks, notification filtering) was another
+guess layered on the last. Reading what Claude Code already publishes removed all
+of them, along with that entire class of bug.
+
+### Permission prompts
+
+One thing the state files do **not** distinguish: a permission prompt keeps the
+interactive session `busy`, exactly like ordinary work. That is the one case
+hooks still cover.
+
 Claude Code fires [hooks](https://docs.claude.com/en/docs/claude-code/hooks) on
 lifecycle events. `claude-hook.sh` catches them, writes a small state file per
 session under `~/.cache/claude-waybar/sessions/`, and sends waybar a realtime
-signal (`SIGRTMIN+10`) so the bar updates instantly. `claude-status.sh` is the
-waybar `exec` module - it aggregates the state files and prints JSON.
+signal (`SIGRTMIN+10`) so the bar updates instantly. The module reads only the
+**interactive** session's entry, and only to see whether it is `waiting` - and
+ignores that if the session has since gone `idle`, which means the turn ended and
+the flag is stale. Everything else in the file is used for housekeeping.
 
 The hooks map lifecycle events to states:
 
@@ -101,22 +141,22 @@ module's `interval` is only a safety net (it also prunes crashed sessions).
 > applies to sessions started *after* you add the hooks. Restart any
 > already-running session to pick them up.
 
-### Interrupts
+### Interrupts, and other transitions that fire no hook
 
-Claude Code fires **no hook when you interrupt a turn** (Esc), so a `working`
-session would otherwise stay `working` forever. As a fallback, a `working`
-session that hasn't had any hook activity for `CLAUDE_WAYBAR_WORK_TIMEOUT`
-seconds (default `90`) is shown as `idle`. The `PreToolUse` / `PostToolUse`
-hooks refresh the timestamp during real work so this only triggers once the
-turn actually stops. Lower it for snappier recovery after interrupts, or raise
-it if you run long single tools with no intermediate hooks.
+Claude Code fires **no hook when you interrupt a turn** (`Esc`), none when you
+background one (`Ctrl-B`), and none when a job goes `blocked`. None of that
+matters now: the module asks Claude Code what the session is doing rather than
+tracking it, so a missing event cannot leave the bar stuck. The previous
+activity-timeout fallback (`CLAUDE_WAYBAR_WORK_TIMEOUT`) is gone.
 
 ### Background jobs and agent sessions
 
 Background jobs and agent sessions are *separate* Claude Code sessions with
 their own `session_id`, so each one gets its own state file. One terminal
 running a couple of agents therefore reports several sessions - that is real,
-not a bug, and the tooltip marks those entries `(agent)`.
+not a bug. The tooltip lists them after the interactive session, each under the
+job's own name (`wallpaper widget inbox review`) rather than a bare directory,
+so you can tell which one wants you.
 
 Working and waiting agents are counted by default, since a background job stuck
 on `waiting` is easy to miss otherwise. **Idle agents are not.** Claude Code
@@ -127,32 +167,23 @@ started - the classic symptom being a stray `1 idle` next to your real agents.
 A finished agent whose process lingers looks the same. They stay in the
 tooltip, just out of the badge.
 
-Spares are also filtered out directly, which matters because an unclaimed one
-does not always sit at `idle` - it can fire `Notification` and land on
-`waiting`, turning the whole badge amber as if a permission prompt were pending
-when nothing was ever started. A real session has a transcript at
-`~/.claude/projects/<slugged-cwd>/<session_id>.jsonl`; a spare has a state file
-and a live PID but no transcript until it is claimed and given work. Agents
-without one are dropped from the badge *and* the tooltip, whatever their state.
-Point `CLAUDE_WAYBAR_PROJECTS_DIR` elsewhere if your transcripts live outside
-`~/.claude/projects`, or set it empty to disable the check. If the directory for
-a session's cwd does not exist at all the check is skipped rather than hiding
-every agent.
+Spares are filtered out directly: a real background job has a directory under
+`~/.claude/jobs/`, an unclaimed spare does not. Agents without one are dropped
+from the badge *and* the tooltip, whatever their state. (This replaced a check
+for the presence of a session transcript, and `CLAUDE_WAYBAR_PROJECTS_DIR` with
+it.)
 
 ### Background jobs blocked on you
 
 A background job that finishes its turn asking you a question fires no hook that
-says so. The turn ended, so `Stop` has already written `idle`, and `Notification`
-only covers prompts that interrupt a turn mid-flight - so the one session
-actually waiting on you sat on the bar in grey.
+says so - the turn ended, so `Stop` already ran, and `Notification` only covers
+prompts that interrupt a turn mid-flight. The one session actually waiting on you
+sat on the bar in grey.
 
-Claude Code records this itself: each background job keeps a
+Claude Code records it itself: each background job keeps a
 `~/.claude/jobs/<job>/state.json`, and a job waiting on you is in state
-`blocked`. Any session whose id appears there is shown as `waiting` regardless of
-what the hooks last recorded, applied after the `working` timeout so it cannot be
-demoted back to `idle`. Point `CLAUDE_WAYBAR_JOBS_DIR` elsewhere if your jobs
-live outside `~/.claude/jobs`, or set it empty to disable the check; without
-`jq` the check is skipped rather than failing.
+`blocked`. Point `CLAUDE_WAYBAR_JOBS_DIR` elsewhere if your jobs live outside
+`~/.claude/jobs`.
 
 **The job state lags, so it needs a veto.** When you answer a blocked job it
 resumes immediately, but its `state.json` can still read `blocked` for a minute
@@ -242,15 +273,13 @@ your session):
 
 | Variable                     | Default                              | Meaning |
 |------------------------------|--------------------------------------|---------|
-| `CLAUDE_WAYBAR_STATE_DIR`    | `~/.cache/claude-waybar/sessions`    | where per-session state lives |
+| `CLAUDE_WAYBAR_STATE_DIR`    | `~/.cache/claude-waybar/sessions`    | where the hook writes its state; only the interactive session's entry is read |
 | `CLAUDE_WAYBAR_SIGNAL`       | `10`                                 | waybar `SIGRTMIN+N` signal number (must match the `signal` in your module) |
-| `CLAUDE_WAYBAR_STALE_SECS`   | `86400`                              | drop sessions older than this many seconds |
-| `CLAUDE_WAYBAR_WORK_TIMEOUT` | `90`                                 | a `working` session idle this long (no hook activity) is shown as `idle` (interrupt fallback) |
+| `CLAUDE_WAYBAR_STALE_SECS`   | `86400`                              | prune hook state files older than this many seconds |
 | `CLAUDE_WAYBAR_AGENTS`       | `active`                             | `active` counts only working/waiting background/agent sessions as a `+N` suffix; `count` counts idle ones too; `hide` reports only the interactive session |
 | `CLAUDE_WAYBAR_MAIN`         | `working`                            | `working` counts the interactive session only while it is working; `always` counts it in every state |
-| `CLAUDE_WAYBAR_PROJECTS_DIR` | `~/.claude/projects`                 | where Claude Code keeps session transcripts; used to tell a real agent from an unclaimed pre-warmed spare. Set empty to disable the check |
-| `CLAUDE_WAYBAR_JOBS_DIR`     | `~/.claude/jobs`                     | where Claude Code keeps background-job state; a job in state `blocked` is shown as `waiting`. Set empty to disable the check |
-| `CLAUDE_WAYBAR_SESSIONS_DIR` | `~/.claude/sessions`                 | live per-process session state; a `busy` session vetoes a stale `blocked` from the jobs dir. Set empty to disable the veto |
+| `CLAUDE_WAYBAR_JOBS_DIR`     | `~/.claude/jobs`                     | Claude Code's background-job state; `blocked` means the job needs input, and a job directory is what tells a real agent from an unclaimed spare |
+| `CLAUDE_WAYBAR_SESSIONS_DIR` | `~/.claude/sessions`                 | Claude Code's live per-process session state - the primary source: which sessions exist, and which are working |
 | `CLAUDE_WAYBAR_COLOR_WAITING`/`_WORKING`/`_IDLE` | `#e0af68`/`#9ece6a`/`#7f849c` | per-state colours for the mixed-session breakdown |
 
 If you already use `SIGRTMIN+10` for another module, pick a free number and set
