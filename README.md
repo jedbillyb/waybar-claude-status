@@ -173,8 +173,19 @@ So the label reads:
 | terminal working, 3 agents       | `claude working +3`  |
 | terminal idle, 3 agents working  | `claude +3`          |
 | terminal working, 2 agents working + 1 idle | `claude working +2` |
+| terminal idle, 1 agent needing input | `claude +1 waiting` |
+| terminal idle, 3 agents, 2 needing input | `claude +3 (2 waiting)` |
+| terminal working, 1 agent needing input | `claude working +1 waiting` |
 | terminal idle, no agents         | *(module collapses)* |
 | terminal idle, only idle agents  | *(module collapses)* |
+
+An agent that needs input says so **in words**, not just in colour. Colour alone
+did not carry it: "3 agents running" and "one of them is blocked on you" both
+rendered as `claude +3`, told apart only by the hue of a two-character span, and
+when the interactive session had a word of its own the label read
+`claude working` while something sat waiting on an answer. Noticing that is the
+entire job of this module, so the suffix spells it out. Working and idle agents
+are unchanged - the bare `+N` is right for them.
 
 Agents are *always* the `+N` suffix - they never occupy the main slot. When
 there is nothing to say about the interactive session (idle or waiting under the

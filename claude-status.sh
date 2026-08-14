@@ -219,15 +219,29 @@ fi
 # Agents ride along as a "+N" suffix, coloured by their own highest-priority
 # state, so the number always matches the number of agents you started and the
 # main label keeps meaning "the session I am typing in".
+#
+# An agent that needs input says so in words. Colour alone did not carry it:
+# "3 agents running" and "one of them is blocked on you" both rendered as
+# "claude +3", told apart only by the hue of a two-character span, and when the
+# interactive session had a word of its own the label read "claude working" while
+# something sat waiting on an answer. Since noticing that is the entire job of
+# this module, the suffix spells it out. Working and idle agents are unchanged —
+# the bare "+N" is right for them.
 if [ "$agents" -gt 0 ]; then
+    suffix="+$agents"
     if [ "$a_waiting" -gt 0 ]; then
         a_color="$COLOR_WAITING"
+        if [ "$a_waiting" -eq "$agents" ]; then
+            suffix="+$agents waiting"
+        else
+            suffix="+$agents ($a_waiting waiting)"
+        fi
     elif [ "$a_working" -gt 0 ]; then
         a_color="$COLOR_WORKING"
     else
         a_color="$COLOR_IDLE"
     fi
-    text="$text <span foreground='$a_color'>+$agents</span>"
+    text="$text <span foreground='$a_color'>$suffix</span>"
 fi
 
 # Trim trailing newline from tooltip.
