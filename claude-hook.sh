@@ -1,5 +1,5 @@
 #!/bin/bash
-# claude-hook.sh — record Claude Code session state for the waybar module.
+# claude-hook.sh - record Claude Code session state for the waybar module.
 #
 # Wired into Claude Code hooks. Reads the hook JSON on stdin, derives a status
 # for the session, writes it to a per-session state file, then pokes waybar so
@@ -40,7 +40,7 @@ state_file="$STATE_DIR/$session_id"
 # The interactive session's process is named `claude`, but background jobs and
 # agent sessions run as `claude.exe` nested underneath it. Matching only
 # `claude` walked straight past those and recorded the top-level interactive
-# PID, which outlives every agent — so their state files were never pruned and
+# PID, which outlives every agent - so their state files were never pruned and
 # the module accumulated phantom sessions. Match both names, and stop at the
 # nearest claude ancestor: that is the session which actually owns this hook.
 find_claude_pid() {
@@ -94,9 +94,8 @@ esac
 # also fires it for the "input idle for 60s" nag and for background-job
 # completion / away summaries, and those arrive *after* the turn is over: Stop
 # has already written 'idle', so the notification would overwrite it with
-# 'waiting' and park a finished job on the bar in amber. Nothing demotes it
-# again (unlike 'working', which WORK_TIMEOUT catches), so every completed
-# background job used to leave one behind.
+# 'waiting' and park a finished job on the bar in amber. Nothing here demotes it
+# again, so every completed background job used to leave one behind.
 #
 # The two cases are told apart by the state they arrive from, which needs no
 # extra bookkeeping: a real permission prompt happens mid-turn, when
@@ -104,10 +103,12 @@ esac
 # before the permission check, so that ordering holds). A completion or idle
 # nag happens post-turn, from 'idle'. Only promote out of 'working'.
 #
-# With no prior state file at all, fall through and record 'waiting' — better a
+# With no prior state file at all, fall through and record 'waiting' - better a
 # spurious badge than a swallowed permission prompt. Unclaimed pre-warmed spares
 # firing stray notifications are filtered by claude-status.sh instead, on the
-# absence of a session transcript.
+# absence of a job directory. Note claude-status.sh reads this file's 'waiting'
+# only for the interactive session, and only while that session is not idle, so
+# a stale flag here cannot reach the bar.
 if [ "$STATUS" = "waiting" ] && [ -f "$state_file" ]; then
     IFS=$'\t' read -r prev_status _ < "$state_file" || prev_status=""
     if [ "$prev_status" != "working" ]; then

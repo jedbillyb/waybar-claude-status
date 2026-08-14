@@ -1,5 +1,5 @@
 #!/bin/bash
-# claude-status.sh — waybar custom module for Claude Code session status.
+# claude-status.sh - waybar custom module for Claude Code session status.
 #
 # Emits one line of JSON ({"text","class","tooltip"}) for waybar to render.
 #
@@ -15,9 +15,9 @@
 # Claude Code publishes what it is actually doing:
 #
 #   ~/.claude/sessions/<pid>.json      kind: interactive|bg, status: busy|idle,
-#                                      sessionId, cwd, name — rewritten live
+#                                      sessionId, cwd, name - rewritten live
 #   ~/.claude/jobs/<short-id>/state.json   state: working|blocked|done|failed
-#                                      — 'blocked' is the real "needs input"
+#                                      - 'blocked' is the real "needs input"
 #
 # So those are the source of truth, and the hook state file is consulted for
 # exactly one thing it alone knows: a permission prompt interrupting a turn in
@@ -44,7 +44,7 @@ JOBS_DIR="${CLAUDE_WAYBAR_JOBS_DIR:-$HOME/.claude/jobs}"
 # reporting only the session you are typing in.
 AGENTS="${CLAUDE_WAYBAR_AGENTS:-active}"
 # The interactive session is the one you are looking at, so a merely idle
-# terminal does not need a badge. 'waiting' is always counted regardless — a
+# terminal does not need a badge. 'waiting' is always counted regardless - a
 # pending permission prompt is exactly the case the badge exists for, especially
 # when you've alt-tabbed away. 'always' additionally counts idle.
 MAIN="${CLAUDE_WAYBAR_MAIN:-working}"
@@ -186,7 +186,7 @@ agents=$((a_waiting+a_working+a_idle))
 total=$((waiting+working+idle))
 
 if [ $((total+agents)) -eq 0 ]; then
-    # No active Claude sessions — emit empty text so the module collapses.
+    # No active Claude sessions - emit empty text so the module collapses.
     printf '{"text":"","class":"none","tooltip":false}\n'
     exit 0
 fi
@@ -247,7 +247,7 @@ fi
 # "claude +3", told apart only by the hue of a two-character span, and when the
 # interactive session had a word of its own the label read "claude working" while
 # something sat waiting on an answer. Since noticing that is the entire job of
-# this module, the suffix spells it out. Working and idle agents are unchanged —
+# this module, the suffix spells it out. Working and idle agents are unchanged -
 # the bare "+N" is right for them.
 if [ "$agents" -gt 0 ]; then
     suffix="+$agents"

@@ -1,4 +1,4 @@
-/* Claude Code status module — add to ~/.config/waybar/style.css */
+/* Claude Code status module - add to ~/.config/waybar/style.css */
 
 #custom-claude {
     padding: 0 8px;

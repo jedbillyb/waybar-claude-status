@@ -1,5 +1,5 @@
 #!/bin/bash
-# install.sh — symlink the scripts into ~/.config/waybar and print the config
+# install.sh - symlink the scripts into ~/.config/waybar and print the config
 # and Claude Code hook snippets you need to add.
 set -euo pipefail
 
