@@ -49,8 +49,28 @@ PROJECTS_DIR="${CLAUDE_WAYBAR_PROJECTS_DIR:-$HOME/.claude/projects}"
 # to look at. Reading the job state directly is what catches it. Set to empty to
 # disable.
 JOBS_DIR="${CLAUDE_WAYBAR_JOBS_DIR:-$HOME/.claude/jobs}"
+# Claude Code also keeps a live per-process file here, named <pid>.json, holding
+# 'kind' (interactive|bg) and 'status' (busy|idle|...). This is the freshest view
+# of what a session is doing, and it is needed because the job state above lags:
+# when you answer a blocked job it goes back to work immediately, but its
+# state.json can still read 'blocked' for a minute or more (the answer shows up
+# as the job's 'detail' while 'state' trails behind). Taken alone that reported
+# jobs as waiting after they had resumed. A 'busy' session therefore vetoes a
+# stale 'blocked'. Set to empty to disable the veto.
+SESSIONS_DIR="${CLAUDE_WAYBAR_SESSIONS_DIR:-$HOME/.claude/sessions}"
 
 mkdir -p "$STATE_DIR"
+
+# True when Claude Code currently considers this process to be actively working.
+# Only a positive 'busy' counts: a missing or unreadable file must not veto a
+# genuine block, so the answer errs towards leaving 'blocked' alone.
+session_is_busy() {
+    local pid="$1"
+    [ -z "$SESSIONS_DIR" ] && return 1
+    [ -n "$pid" ] || return 1
+    [ -f "$SESSIONS_DIR/$pid.json" ] || return 1
+    [ "$(jq -r '.status // empty' "$SESSIONS_DIR/$pid.json" 2>/dev/null)" = "busy" ]
+}
 
 # True when this session has a transcript on disk, i.e. it is a session rather
 # than an unclaimed spare. Errs towards "real": if the project directory for
@@ -113,8 +133,10 @@ for f in "$STATE_DIR"/*; do
     fi
     # A job blocked on the user outranks whatever the hooks last recorded, and
     # is applied after the timeout above so it can't be demoted back to idle.
+    # Unless the session is busy right now, which means the job has already been
+    # answered and its state.json simply has not caught up yet.
     case "$blocked_ids" in
-        *" ${f##*/} "*) status="waiting" ;;
+        *" ${f##*/} "*) session_is_busy "${pid:-}" || status="waiting" ;;
     esac
     # Skip after pruning, never before, so hidden agent sessions still get
     # their stale files cleaned up.

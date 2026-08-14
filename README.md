@@ -154,6 +154,20 @@ demoted back to `idle`. Point `CLAUDE_WAYBAR_JOBS_DIR` elsewhere if your jobs
 live outside `~/.claude/jobs`, or set it empty to disable the check; without
 `jq` the check is skipped rather than failing.
 
+**The job state lags, so it needs a veto.** When you answer a blocked job it
+resumes immediately, but its `state.json` can still read `blocked` for a minute
+or more - your answer shows up as the job's `detail` while `state` trails behind.
+Taken alone that reported jobs as waiting well after they had gone back to work,
+and with every counted agent stale-blocked the label read `+3 waiting` while one
+of them was visibly working in the job list.
+
+Claude Code also writes a live per-process file at `~/.claude/sessions/<pid>.json`
+with `kind` (`interactive`|`bg`) and `status` (`busy`|`idle`|...), and the pid is
+already recorded, so a **`busy` session vetoes a stale `blocked`**. Only a
+positive `busy` counts: a missing, unreadable or malformed file leaves the block
+alone, so the veto can never swallow a real prompt. Point
+`CLAUDE_WAYBAR_SESSIONS_DIR` elsewhere or set it empty to disable it.
+
 Set `CLAUDE_WAYBAR_AGENTS=count` for the old behaviour (idle agents counted
 too), or `CLAUDE_WAYBAR_AGENTS=hide` to report only the session you are typing
 in; hidden sessions are still pruned, so nothing accumulates.
@@ -236,6 +250,7 @@ your session):
 | `CLAUDE_WAYBAR_MAIN`         | `working`                            | `working` counts the interactive session only while it is working; `always` counts it in every state |
 | `CLAUDE_WAYBAR_PROJECTS_DIR` | `~/.claude/projects`                 | where Claude Code keeps session transcripts; used to tell a real agent from an unclaimed pre-warmed spare. Set empty to disable the check |
 | `CLAUDE_WAYBAR_JOBS_DIR`     | `~/.claude/jobs`                     | where Claude Code keeps background-job state; a job in state `blocked` is shown as `waiting`. Set empty to disable the check |
+| `CLAUDE_WAYBAR_SESSIONS_DIR` | `~/.claude/sessions`                 | live per-process session state; a `busy` session vetoes a stale `blocked` from the jobs dir. Set empty to disable the veto |
 | `CLAUDE_WAYBAR_COLOR_WAITING`/`_WORKING`/`_IDLE` | `#e0af68`/`#9ece6a`/`#7f849c` | per-state colours for the mixed-session breakdown |
 
 If you already use `SIGRTMIN+10` for another module, pick a free number and set
