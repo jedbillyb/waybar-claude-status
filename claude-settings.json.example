@@ -1,25 +1,31 @@
 {
+  "_comment": [
+    "These hooks only nudge waybar to refresh the module immediately.",
+    "They carry no state: claude-status.sh reads Claude Code's own",
+    "~/.claude/sessions/<pid>.json for that. The module works without any",
+    "hooks at all, it just refreshes on its poll interval instead."
+  ],
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh idle" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh" } ] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh working" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh" } ] }
     ],
     "PreToolUse": [
-      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh working" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh" } ] }
     ],
     "PostToolUse": [
-      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh working" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh" } ] }
     ],
     "Notification": [
-      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh waiting" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh" } ] }
     ],
     "Stop": [
-      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh idle" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh" } ] }
     ],
     "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh end" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.config/waybar/claude-hook.sh" } ] }
     ]
   }
 }

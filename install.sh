@@ -1,6 +1,6 @@
 #!/bin/bash
 # install.sh - symlink the scripts into ~/.config/waybar and print the config
-# and Claude Code hook snippets you need to add.
+# and (optional) Claude Code hook snippets you need to add.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,8 +31,11 @@ Next steps
 
 2. Add the CSS in style.css.example to ~/.config/waybar/style.css.
 
-3. Add the hooks in claude-settings.json.example to ~/.claude/settings.json
-   (merge the "hooks" block into your existing one).
+3. Optional: add the hooks in claude-settings.json.example to
+   ~/.claude/settings.json (merge the "hooks" block into your existing one).
+   They carry no state - they only poke waybar so the module refreshes the
+   instant something changes instead of on its poll interval. The module reads
+   Claude Code's own ~/.claude/sessions/<pid>.json and works fine without them.
 
 4. Reload waybar:  pkill -SIGUSR2 waybar   (or restart it)
 EOF
